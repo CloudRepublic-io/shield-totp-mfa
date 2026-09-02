@@ -41,12 +41,14 @@
     </button>
 </form>
 
+<?php if (\Config\Services::routes()->reverseRoute('totp-activator-skip') !== false) : ?>
 <form method="post" action="<?= url_to('totp-activator-skip') ?>" class="mt-2">
     <?= csrf_field() ?>
     <button type="submit" class="btn btn-link p-0">
         <?= lang('TotpMfa.skipButton') ?>
     </button>
 </form>
+<?php endif ?>
 
 <!--
     QR is rendered client-side from the otpauth:// URI already present

@@ -11,12 +11,12 @@ Authenticator, Authy, 1Password, etc.) to a CodeIgniter Shield app:
 - **`TotpSettingsController`** - a standalone self-service page
   (`account/totp`) for existing users to turn TOTP on or off any time,
   with no registration-time involvement and no dependency on the
-  `shield-mfa-dispatcher` package.
+  `shield-mfa-dispatcher` [package]('https://github.com/CloudRepublic-io/shield-mfa-dispatcher').
 - **`RequireFreshTotp`** - a route filter for step-up auth: force a
   fresh TOTP challenge before a specific sensitive page, even for a
   user who's already fully logged in.
 - **`RememberedDevicesController`** - lets a user see and revoke
-  devices (`account/devices`) that skip the login code prompt.
+  devices that skip the login code prompt.
 
 All of the above read/write the exact same permanent identity via one
 shared class, `TotpIdentityStore`, so it doesn't matter which path a
@@ -91,7 +91,7 @@ A user can end up TOTP-enrolled via any of the three left-hand paths;
 `TotpMfa` (login) and `RequireFreshTotp` (step-up) don't know or care
 which one they used - both just check `TotpIdentityStore::hasEnrolled()`.
 
-**If you're using the separate `shield-mfa-dispatcher` package**
+**If you're using the separate `shield-mfa-dispatcher` [package]('https://github.com/CloudRepublic-io/shield-mfa-dispatcher')**
 instead of (or alongside) `TotpSettingsController`, that package's own
 `MfaSettingsController` is an alternative settings-page entry point -
 it also goes through `TotpIdentityStore`, so a user enrolled via either
@@ -183,9 +183,19 @@ MFA method, the dispatcher's version if you offer several.
    `TotpActivator`-specific.
 
 6. **Add whichever routes you need** from `routes-snippet.php` to
-   `app/Config/Routes.php` - it now covers several optional pieces, so
-   only add what you're actually using:
-   - `TotpActivator`'s "skip" route (only if you registered it in step 5)
+   `app/Config/Routes.php` - it now covers several optional pieces:
+   - `TotpActivator`'s "skip" route - **add this by default if you
+     registered `TotpActivator` in step 5.** The enrollment view always
+     renders a "skip for now" link, regardless of whether this route
+     exists - omitting it is safe (the view now detects a missing route
+     and simply hides the link, rather than throwing when the very
+     first user registers), but you'd be silently taking away a "skip"
+     option from every new user unless that's actually what you want
+     (e.g. because MFA is mandatory for everyone via
+     `shield-mfa-dispatcher`'s `$required`/`$requiredMethodsForGroups`).
+     If you deliberately don't want "skip" offered at all, omitting the
+     route is now enough on its own - you don't need to also edit the
+     view.
    - Remembered-devices management (`account/devices`)
    - Standalone settings (`account/totp`) - see "Standalone
      self-service enable/disable" below
@@ -340,9 +350,9 @@ flow - see that package's own README for the full explanation of why.
 
 ## Testing your TOTP secret without a phone handy
 
-While developing this package it was useful to have an authenticator in the browser, Chrome extension **2FA Authenticator** was used and provides some nice features that can help anyone wishing to contribute further to this plugin. Alternatively 
 `TotpMfa\Libraries\Totp::currentCode($secret)` returns the code that
-would currently validate for a given secret - also handy for development or a quick test script while wiring this up.
+would currently validate for a given secret - handy in `php spark`
+tinker sessions or a quick test script while wiring this up.
 
 ## If a page loads but shows nothing at all
 
@@ -421,9 +431,9 @@ directly onto the exact response object being returned/sent
 short-circuit and `verify()`'s success path. If you're on an older
 copy of `TotpMfa.php`, replace it.
 
-## Standalone self-service enable/disable (no dispatcher package needed)
+## Standalone self-service enable/disable (no dispatcher [package]('https://github.com/CloudRepublic-io/shield-mfa-dispatcher') needed)
 
-If you're not using the `shield-mfa-dispatcher` package, users who
+If you're not using the `shield-mfa-dispatcher` [package]('https://github.com/CloudRepublic-io/shield-mfa-dispatcher'), users who
 skip TOTP setup at registration (via `TotpActivator`'s "skip for now"
 link) still need some way to turn it on later. `TotpSettingsController`
 provides a minimal standalone page for exactly that - just "set up" /
@@ -437,7 +447,7 @@ provides a minimal standalone page for exactly that - just "set up" /
 Add the routes from `routes-snippet.php` and link to `account/totp`
 from wherever your account settings page lives.
 
-If you *are* using `shield-mfa-dispatcher`, use that package's
+If you *are* using `shield-mfa-dispatcher`, use that [package's]('https://github.com/CloudRepublic-io/shield-mfa-dispatcher')
 `MfaSettingsController` instead (it also handles switching between
 several MFA methods, not just TOTP on/off) - both ultimately go through
 the same `TotpIdentityStore`, so a user enrolled via either one is
@@ -772,7 +782,7 @@ SELECT * FROM auth_remembered_devices WHERE user_id = <id>;
 ```
 
 which should return nothing immediately after disabling TOTP from
-`account/totp` (or the dispatcher package's equivalent).
+`account/totp` (or the dispatcher [package's]('https://github.com/CloudRepublic-io/shield-mfa-dispatcher') equivalent).
 
 ## If the recorded IP address is your server's IP, not the visitor's
 
@@ -833,6 +843,32 @@ passed to each one. The full list of overridable keys:
 | `totp_settings_enroll` | `TotpMfa\Views\totp_settings_enroll` | `TotpSettingsController::enroll()` |
 | `totp_step_up` | `TotpMfa\Views\totp_step_up` | `TotpStepUpController::show()` |
 | `remembered_devices_index` | `TotpMfa\Views\remembered_devices_index` | `RememberedDevicesController::index()` |
+
+## If you get "user_id and id ... are incompatible" during migration
+
+This was a genuine bug in the shipped migration: `auth_remembered_devices.user_id`
+was defined as `BIGINT UNSIGNED`, but Shield's own `users.id` column
+is actually `INT(11) UNSIGNED` (confirmed against Shield's real
+migration source, not assumed) - a width mismatch (8 bytes vs 4), and
+MySQL correctly refuses to create a foreign key across two columns
+that aren't identically typed. Fixed by changing `user_id` to
+`INT(11) UNSIGNED`, exactly matching `users.id`.
+
+If you already ran the old migration anywhere (dev, a shared test
+database, etc.) before picking up this fix, you'll have a stale table
+with the wrong column type sitting there - migrating again won't
+retroactively fix an already-created table. Either drop it and
+re-migrate:
+
+```sql
+DROP TABLE auth_remembered_devices;
+```
+```
+php spark migrate --all
+```
+
+or write your own follow-up migration to `modifyColumn()` it in place,
+if you'd rather not drop existing remembered-device data.
 
 ## If you get "Cannot declare class ...CreateAuthRememberedDevices, because the name is already in use", or "table already exists" during migration
 

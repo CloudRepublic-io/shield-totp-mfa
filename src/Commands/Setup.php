@@ -158,10 +158,15 @@ class Setup extends BaseCommand
 
         CLI::newLine();
         CLI::write('4) Add whichever routes you need from routes-snippet.php to');
-        CLI::write('   app/Config/Routes.php - it covers several optional pieces (the');
-        CLI::write('   TotpActivator skip link, remembered-devices management, the');
-        CLI::write('   standalone settings page, and the step-up challenge), so only add');
-        CLI::write('   what you\'re actually using. See the README\'s Installation section.');
+        CLI::write('   app/Config/Routes.php. If you registered TotpActivator in step 3,');
+        CLI::write('   add its skip route by default - the enrollment view always renders');
+        CLI::write('   a "skip for now" link regardless of whether the route exists (safe');
+        CLI::write('   either way now: a missing route makes the view hide the link rather');
+        CLI::write('   than throwing), so only leave it out if you deliberately don\'t want');
+        CLI::write('   "skip" offered at all. The rest (remembered-devices management, the');
+        CLI::write('   standalone settings page, the step-up challenge) are genuinely');
+        CLI::write('   optional - only add what you\'re using. See the README\'s Installation');
+        CLI::write('   section.');
 
         CLI::newLine();
         CLI::write('5) Set your app name as the issuer, either in app/Config/TotpMfa.php');
