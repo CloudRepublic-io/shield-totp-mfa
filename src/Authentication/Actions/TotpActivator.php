@@ -7,6 +7,7 @@ namespace TotpMfa\Authentication\Actions;
 use CodeIgniter\HTTP\IncomingRequest;
 use CodeIgniter\HTTP\Response;
 use CodeIgniter\Shield\Authentication\Actions\ActionInterface;
+use CodeIgniter\Shield\Authentication\Actions\ConditionalActionInterface;
 use CodeIgniter\Shield\Authentication\Authenticators\Session;
 use CodeIgniter\Shield\Entities\User;
 use CodeIgniter\Shield\Exceptions\RuntimeException;
@@ -53,8 +54,45 @@ use Config\TotpMfa as TotpMfaConfig;
  * one means this is the forced-setup reuse (redirects to
  * loginRedirect() instead, and skips activate() entirely - there's no
  * inactive account to activate).
+ *
+ * IMPLEMENTS ConditionalActionInterface - CARRIED OVER FROM
+ * shield-passkey-mfa, where a confirmed, real user report showed a
+ * user who had already enrolled still being routed into
+ * PasskeyActivator's own enrollment flow on a later, ordinary login
+ * (paired with shield-mfa-dispatcher: register=Activator,
+ * login=MfaDispatcher) - despite shield-mfa-dispatcher's own
+ * MfaDispatcher::resolveRequiredMethod() correctly resolving the user
+ * as already enrolled. Direct log tracing there confirmed Shield
+ * itself was routing straight to the register slot's activator,
+ * never even reaching the login slot's action for that request.
+ *
+ * Confirmed against Shield's own official documentation on Auth
+ * Actions: a custom action can implement ConditionalActionInterface's
+ * appliesTo(User $user): bool to tell Shield directly whether it
+ * should be considered pending for a given user at all - "when
+ * appliesTo() returns false, Shield does not start the action and
+ * ignores stored identities for that action while the condition
+ * remains false." Without this, Shield apparently keeps discovering a
+ * "pending" register action for a user long after they've actually
+ * finished registering.
+ *
+ * This class's own getType() returns
+ * TotpIdentityStore::ID_TYPE_TOTP_ACTIVATE - a genuinely different
+ * type from TotpMfa's own ID_TYPE_TOTP, not a shared one (an earlier,
+ * now-corrected claim in shield-passkey-mfa's own README wrongly
+ * assumed its two actions shared a type too - they don't either, see
+ * that package's own corrected note). The most likely mechanism here:
+ * ID_TYPE_TOTP_ACTIVATE is a temporary marker created during
+ * registration - if it's never cleaned up once registration completes,
+ * Shield could keep finding a match for the register slot's own type
+ * indefinitely. This is a plausible, not fully traced, explanation -
+ * see shield-passkey-mfa's own README for the same honest caveat.
+ * appliesTo() below sidesteps the question of the exact mechanism
+ * entirely: whatever the reason Shield might still consider this
+ * pending, telling it directly not to once the user has already
+ * enrolled is the documented, correct fix regardless.
  */
-class TotpActivator implements ActionInterface
+class TotpActivator implements ActionInterface, ConditionalActionInterface
 {
     use CompletesPendingAction;
 
@@ -65,6 +103,20 @@ class TotpActivator implements ActionInterface
     {
         $this->store  = new TotpIdentityStore();
         $this->config = config('TotpMfa');
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * Confirmed via Shield's own docs: "may be called more than once
+     * while Shield checks for actions, so keep it deterministic, free
+     * of side effects, and fail closed when the condition cannot be
+     * determined." hasEnrolled() is a plain, read-only DB check - no
+     * side effects, deterministic for a given user's stored state.
+     */
+    public function appliesTo(User $user): bool
+    {
+        return ! $this->store->hasEnrolled($user);
     }
 
     public function show(): string

@@ -331,6 +331,40 @@ active *before* touching anything, and branches accordingly. This
 class needed no other changes to support the dispatcher's forced-setup
 flow - see that package's own README for the full explanation of why.
 
+## A user with an existing TOTP secret was still routed into enrollment - fixed
+
+**Fixed in the current version.** Carried over from a confirmed, real
+fix in `shield-passkey-mfa`: if you're pairing this package with
+`shield-mfa-dispatcher` (`register = TotpActivator::class`,
+`login = MfaDispatcher::class`), a user who had already enrolled in
+TOTP could still be shown `TotpActivator`'s own enrollment prompt on a
+later, ordinary login - despite `shield-mfa-dispatcher`'s own
+resolution logic correctly recognizing them as already enrolled. Log
+tracing in the passkey package's own investigation confirmed Shield
+itself was routing straight to the `register` slot's activator, never
+reaching the `login` slot's action at all for that request.
+
+Confirmed against Shield's own official documentation on Auth Actions:
+a custom action can implement `ConditionalActionInterface`'s
+`appliesTo(User $user): bool` to tell Shield directly whether it
+should be considered pending for a given user at all - "when
+`appliesTo()` returns false, Shield does not start the action and
+ignores stored identities for that action while the condition remains
+false." `TotpActivator` didn't implement this. The likely mechanism
+(not fully traced through Shield's own source - an honest caveat, not
+a fully root-caused claim): `TotpIdentityStore::ID_TYPE_TOTP_ACTIVATE`
+is a temporary marker created during registration; if it's never
+cleaned up once registration completes, Shield could keep finding a
+match for the `register` slot's own type indefinitely.
+
+**Fixed:** `TotpActivator` now implements `ConditionalActionInterface`,
+returning `false` from `appliesTo()` once the user already has TOTP
+enrolled. Unlike the passkey package (which can't produce real
+cryptographic test data), this fix has genuine test coverage here -
+`TotpActivatorTest` completes a real enrollment with a real,
+currently-valid code and confirms `appliesTo()` correctly returns
+`false` afterward.
+
 ## Remember-device security notes
 
 - The cookie stores a random **selector** (used to look the record up)

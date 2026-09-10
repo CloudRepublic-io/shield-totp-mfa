@@ -50,14 +50,8 @@ class TotpSettingsController extends Controller
     {
         $user = auth()->user();
 
-        // If this user is already enrolled in TOTP, we don't want to let them enroll again so send them back to the
-        // Settings page with a message that they're already enrolled. We can't perform a normal redirect here
-        // as this is a controller method that returns a string, so we need to send the redirect response and exit to prevent further execution.
-        // having to change the return type and breaking the interface. 
         if ($this->store->hasEnrolled($user)) {
-            $response = redirect()->to(route_to('totp-settings'))->with('message', lang('TotpMfa.alreadyEnrolled'));
-            $response->send();
-            exit;
+            return redirect()->route('totp-settings')->with('message', lang('TotpMfa.alreadyEnrolled'));
         }
 
         $enrollment = $this->store->beginEnrollment($user, $user->email ?? ('user-' . $user->id));

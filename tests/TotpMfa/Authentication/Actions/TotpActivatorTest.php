@@ -452,4 +452,42 @@ final class TotpActivatorTest extends CIUnitTestCase
         // ran than comparing raw redirect URLs would be.
         $this->assertSame(lang('TotpMfa.successMessage'), session('message'));
     }
+
+    // -------------------------------------------------------------------
+    // appliesTo() - THE confirmed fix, carried over from
+    // shield-passkey-mfa's own confirmed resolution of a real bug: a
+    // user with an already-enrolled method was still routed into that
+    // method's own enrollment flow on later, ordinary logins. See this
+    // class's own doc comment for the full account.
+    // -------------------------------------------------------------------
+
+    public function testAppliesToReturnsTrueForAUserWithNoTotpEnrolled(): void
+    {
+        $user      = $this->makeUser();
+        $activator = new TotpActivator();
+
+        $this->assertTrue($activator->appliesTo($user));
+    }
+
+    /**
+     * THE regression test for the actual bug. Unlike shield-passkey-mfa's
+     * own equivalent test (which can only insert a fake row, since
+     * real passkey enrollment needs real cryptography this test suite
+     * can't produce), TOTP's own enrollment can be completed for real
+     * here - store()->beginEnrollment() + confirmEnrollment() with a
+     * genuinely matching, freshly-generated code.
+     */
+    public function testAppliesToReturnsFalseForAUserWithTotpAlreadyEnrolled(): void
+    {
+        $user  = $this->makeUser();
+        $store = new TotpIdentityStore();
+
+        $enrollment = $store->beginEnrollment($user, $user->email);
+        $totp       = new Totp();
+        $store->confirmEnrollment($user, $totp->currentCode($enrollment['secret']));
+
+        $activator = new TotpActivator();
+
+        $this->assertFalse($activator->appliesTo($user));
+    }
 }
