@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\TotpMfa\Filters;
 
 use CodeIgniter\Config\Services;
+use CodeIgniter\HTTP\RedirectResponse;
 use CodeIgniter\Shield\Entities\User;
 use CodeIgniter\Shield\Models\UserModel;
 use CodeIgniter\Shield\Test\AuthenticationTesting;
@@ -56,7 +57,54 @@ final class RequireFreshTotpTest extends CIUnitTestCase
         // package's own tests call it - see TotpActivatorTest's own
         // setUp() for why) wipes it. loadRoutes() is safe to call even
         // if routes are already loaded.
-        Services::routes()->loadRoutes();
+        $routes = Services::routes();
+        $routes->loadRoutes();
+
+        // The filter redirects to two NAMED routes - 'totp-step-up' and
+        // $config->stepUpEnrollRouteName ('totp-settings-enroll' by
+        // default) - which come from this package's routes-snippet.php,
+        // not from Shield. A host app that hasn't pasted those routes in
+        // (e.g. one using shield-mfa-dispatcher's settings page and never
+        // applying 'totp-fresh') has no such names, and every redirecting
+        // test here then errors with "The route for ... cannot be found"
+        // - even though loadRoutes() above worked fine (Shield's own
+        // 'auth-action-verify' resolves in the same run). This filter's
+        // tests shouldn't depend on how the host app wires its routes, so
+        // register them here when missing. Test-only paths, so they can't
+        // collide with a host route already using /account/totp/...
+        // under a different name; skipped entirely when the host app
+        // already defines the names.
+        if ($routes->reverseRoute('totp-step-up') === false) {
+            $routes->get(
+                'totp-mfa-test/step-up',
+                '\TotpMfa\Controllers\TotpStepUpController::show',
+                ['as' => 'totp-step-up'],
+            );
+        }
+
+        $enrollRouteName = config('TotpMfa')->stepUpEnrollRouteName;
+
+        if ($routes->reverseRoute($enrollRouteName) === false) {
+            $routes->get(
+                'totp-mfa-test/enroll',
+                '\TotpMfa\Controllers\TotpSettingsController::enroll',
+                ['as' => $enrollRouteName],
+            );
+        }
+    }
+
+    /**
+     * Asserts the filter returned a redirect to the given named route -
+     * a stronger check than assertNotNull(), which would also pass for
+     * a redirect to the wrong place.
+     */
+    private function assertRedirectsToRoute(string $routeName, $result): void
+    {
+        $this->assertInstanceOf(RedirectResponse::class, $result);
+        $this->assertSame(
+            site_url(Services::routes()->reverseRoute($routeName)),
+            $result->getHeaderLine('Location'),
+        );
     }
 
     protected function tearDown(): void
@@ -113,7 +161,7 @@ final class RequireFreshTotpTest extends CIUnitTestCase
 
         $result = (new RequireFreshTotp())->before(service('request'));
 
-        $this->assertNotNull($result);
+        $this->assertRedirectsToRoute('totp-step-up', $result);
     }
 
     public function testFreshStepUpSessionLetsTheRequestThrough(): void
@@ -140,7 +188,7 @@ final class RequireFreshTotpTest extends CIUnitTestCase
 
         $result = (new RequireFreshTotp())->before(service('request'));
 
-        $this->assertNotNull($result);
+        $this->assertRedirectsToRoute('totp-step-up', $result);
     }
 
     public function testUnenrolledUserPassesThroughByDefault(): void
@@ -174,6 +222,6 @@ final class RequireFreshTotpTest extends CIUnitTestCase
 
         $result = (new RequireFreshTotp())->before(service('request'));
 
-        $this->assertNotNull($result);
+        $this->assertRedirectsToRoute($config->stepUpEnrollRouteName, $result);
     }
 }

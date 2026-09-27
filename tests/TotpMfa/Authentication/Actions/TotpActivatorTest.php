@@ -203,12 +203,26 @@ final class TotpActivatorTest extends CIUnitTestCase
         ]);
     }
 
+    /**
+     * A fresh IncomingRequest carrying the given POST data.
+     *
+     * setGlobal('post', ...) is what actually makes this work on
+     * CodeIgniter 4.7+: from 4.7, a request reads POST data from the
+     * shared 'superglobals' service, which snapshots $_POST once, the
+     * first time anything asks for it (attempt() does, well before this
+     * runs). Assigning $_POST afterwards is invisible to the request, so
+     * getPost('code') came back null and every "correct code" test here
+     * failed with the code silently treated as empty. setGlobal() exists
+     * on 4.6 too, so this works on both; $_POST is still set for
+     * anything that reads it directly.
+     */
     private function requestWithPost(array $post): IncomingRequest
     {
         $_POST = $post;
 
         /** @var IncomingRequest $request */
         $request = service('request', null, false);
+        $request->setGlobal('post', $post);
 
         return $request;
     }

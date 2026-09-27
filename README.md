@@ -11,7 +11,7 @@ Authenticator, Authy, 1Password, etc.) to a CodeIgniter Shield app:
 - **`TotpSettingsController`** - a standalone self-service page
   (`account/totp`) for existing users to turn TOTP on or off any time,
   with no registration-time involvement and no dependency on the
-  `shield-mfa-dispatcher` [package]('https://github.com/CloudRepublic-io/shield-mfa-dispatcher').
+  `shield-mfa-dispatcher` package.
 - **`RequireFreshTotp`** - a route filter for step-up auth: force a
   fresh TOTP challenge before a specific sensitive page, even for a
   user who's already fully logged in.
@@ -33,6 +33,14 @@ is revoked.
 
 No composer dependencies - the TOTP (RFC 6238) and Base32 (RFC 4648)
 implementations are written from scratch in `src/Libraries/`.
+
+## Requirements
+
+- PHP 8.2 or later
+- CodeIgniter 4.6 or later
+- CodeIgniter Shield 1.4 or later
+
+Tested on CodeIgniter 4.6 and 4.7, up to PHP 8.5.
 
 ## What's in the box
 
@@ -91,7 +99,7 @@ A user can end up TOTP-enrolled via any of the three left-hand paths;
 `TotpMfa` (login) and `RequireFreshTotp` (step-up) don't know or care
 which one they used - both just check `TotpIdentityStore::hasEnrolled()`.
 
-**If you're using the separate `shield-mfa-dispatcher` [package]('https://github.com/CloudRepublic-io/shield-mfa-dispatcher')**
+**If you're using the separate `shield-mfa-dispatcher` package**
 instead of (or alongside) `TotpSettingsController`, that package's own
 `MfaSettingsController` is an alternative settings-page entry point -
 it also goes through `TotpIdentityStore`, so a user enrolled via either
@@ -465,9 +473,9 @@ directly onto the exact response object being returned/sent
 short-circuit and `verify()`'s success path. If you're on an older
 copy of `TotpMfa.php`, replace it.
 
-## Standalone self-service enable/disable (no dispatcher [package]('https://github.com/CloudRepublic-io/shield-mfa-dispatcher') needed)
+## Standalone self-service enable/disable (no dispatcher package needed)
 
-If you're not using the `shield-mfa-dispatcher` [package]('https://github.com/CloudRepublic-io/shield-mfa-dispatcher'), users who
+If you're not using the `shield-mfa-dispatcher` package, users who
 skip TOTP setup at registration (via `TotpActivator`'s "skip for now"
 link) still need some way to turn it on later. `TotpSettingsController`
 provides a minimal standalone page for exactly that - just "set up" /
@@ -481,7 +489,7 @@ provides a minimal standalone page for exactly that - just "set up" /
 Add the routes from `routes-snippet.php` and link to `account/totp`
 from wherever your account settings page lives.
 
-If you *are* using `shield-mfa-dispatcher`, use that [package's]('https://github.com/CloudRepublic-io/shield-mfa-dispatcher')
+If you *are* using `shield-mfa-dispatcher`, use that package's
 `MfaSettingsController` instead (it also handles switching between
 several MFA methods, not just TOTP on/off) - both ultimately go through
 the same `TotpIdentityStore`, so a user enrolled via either one is
@@ -714,6 +722,38 @@ method's own doc comment, and `TotpActivatorTest`'s class doc comment,
 for the full account of both
 issues and how they were told apart.
 
+**Two more fixes, found running the suite on CodeIgniter 4.7 / PHP 8.5:**
+
+1. *Correct codes rejected on CodeIgniter 4.7+* (`testCorrectCodeActivatesUserAndEnrollsTotp`,
+   `testVerifyForAnAlreadyActiveUserRedirectsToLoginNotRegistration`,
+   `testCorrectCodeCompletesLogin`, `testRememberDeviceCreatesRecordWhenChecked`).
+   From 4.7, a request reads POST data from the shared `superglobals`
+   service, which copies `$_POST` once, the first time anything asks for
+   it. Shield's `attempt()` does that before the test posts its code, so
+   the test's later `$_POST = [...]` never reached the request.
+   `getPost('code')` returned `null`, and `verify()` rejected the code as
+   empty. The wrong-code and empty-code tests were passing only because
+   every code looked empty. The tests' `requestWithPost()` helper now also
+   calls `$request->setGlobal('post', $post)`, which works on 4.6 and 4.7.
+   This was checked against the framework source: on 4.7.4 the old helper
+   gives `null` and the new one gives the code; on 4.6.3 both give the
+   code, which is why these tests passed on 4.6. The package's own code
+   wasn't affected. Real requests arrive with their POST data already in
+   place.
+2. *"The route for "totp-step-up" / "totp-settings-enroll" cannot be
+   found"* in `RequireFreshTotpTest`. `loadRoutes()` was working (Shield's
+   `auth-action-verify` resolved in the same run). These two names come
+   from this package's `routes-snippet.php`, though, and a host app that
+   hasn't added those routes doesn't have them. That happens, for example,
+   when you use shield-mfa-dispatcher's settings page and never apply
+   `totp-fresh`. The test's `setUp()` now registers both names on
+   test-only paths when the host app doesn't define them, and leaves them
+   alone when it does. The three redirect tests now also check *where*
+   the filter redirects to, not just that it returned something. In a
+   real app, if you use the `totp-fresh` filter (directly, or through
+   shield-mfa-dispatcher's `$stepUpFilterClasses`), you still need the
+   step-up and enroll routes from `routes-snippet.php`.
+
 ```
 tests/TotpMfa/
   Libraries/Base32Test.php            <- pure codec round-trip, no DB/HTTP
@@ -816,7 +856,7 @@ SELECT * FROM auth_remembered_devices WHERE user_id = <id>;
 ```
 
 which should return nothing immediately after disabling TOTP from
-`account/totp` (or the dispatcher [package's]('https://github.com/CloudRepublic-io/shield-mfa-dispatcher') equivalent).
+`account/totp` (or the dispatcher package's equivalent).
 
 ## If the recorded IP address is your server's IP, not the visitor's
 
