@@ -217,7 +217,8 @@ class TotpIdentityStore
     {
         $this->identities()->deleteIdentitiesByType($user, self::ID_TYPE_TOTP);
 
-        db_connect()->table('auth_remembered_devices')
+        // Shield's connection (Config\Auth::$DBGroup, or the default) - see RememberedDeviceModel.
+        db_connect(config('Auth')->DBGroup)->table('auth_remembered_devices')
             ->where('user_id', $user->id)
             ->delete();
     }

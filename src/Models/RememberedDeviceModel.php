@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace TotpMfa\Models;
 
+use CodeIgniter\Database\ConnectionInterface;
 use CodeIgniter\Model;
+use CodeIgniter\Validation\ValidationInterface;
 
 /**
  * @property int         $id
@@ -33,6 +35,22 @@ class RememberedDeviceModel extends Model
         'last_used_at',
         'expires_at',
     ];
+
+    /**
+     * Same connection as Shield's own tables: Config\Auth::$DBGroup when
+     * it's set (e.g. a multi-tenant app keeping users in a central
+     * database), otherwise the default connection - as Shield's models do.
+     */
+    public function __construct(?ConnectionInterface $db = null, ?ValidationInterface $validation = null)
+    {
+        $group = config('Auth')->DBGroup;
+
+        if ($group !== null) {
+            $this->DBGroup = $group;
+        }
+
+        parent::__construct($db, $validation);
+    }
 
     /**
      * Find a non-expired device by its selector (the public half of the

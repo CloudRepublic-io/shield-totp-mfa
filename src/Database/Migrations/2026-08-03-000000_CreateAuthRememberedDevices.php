@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace TotpMfa\Database\Migrations;
 
+use CodeIgniter\Database\Forge;
 use CodeIgniter\Database\Migration;
 
 /**
@@ -22,6 +23,21 @@ use CodeIgniter\Database\Migration;
  */
 class CreateAuthRememberedDevices extends Migration
 {
+    /**
+     * Created alongside Shield's own tables: on Config\Auth::$DBGroup when
+     * it's set, otherwise the default connection - as Shield's migration does.
+     */
+    public function __construct(?Forge $forge = null)
+    {
+        $group = config('Auth')->DBGroup;
+
+        if ($group !== null) {
+            $this->DBGroup = $group;
+        }
+
+        parent::__construct($forge);
+    }
+
     public function up(): void
     {
         $this->forge->addField([

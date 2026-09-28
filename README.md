@@ -627,6 +627,26 @@ the exact getType()/createIdentity() problems documented earlier in
 this README, for no benefit - a plain filter has none of those
 constraints.
 
+## Apps that keep Shield's tables on their own connection (`Config\Auth::$DBGroup`) - fixed
+
+Shield lets you put its tables on a database group other than the
+default one with `Config\Auth::$DBGroup`, and its own models and
+migration follow that setting. This package's `auth_remembered_devices`
+table didn't: `RememberedDeviceModel`, the migration that creates the
+table, and `TotpIdentityStore::disable()` all used the default
+connection.
+
+That only goes wrong when the default connection isn't where the users
+are. A multi-tenant app is the usual case: users live in a central
+database, and each request switches the default connection to the
+current tenant's database. There, "remember this device" and disabling
+TOTP failed with "table doesn't exist", because they looked in the
+tenant's database.
+
+All three now use `Config\Auth::$DBGroup` when it's set, and the default
+connection when it's `null` (Shield's default). Nothing changes for apps
+that don't set it.
+
 ## Tests
 
 `tests/TotpMfa/` contains a test suite covering everything from raw
